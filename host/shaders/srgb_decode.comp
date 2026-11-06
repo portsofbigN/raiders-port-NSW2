@@ -1,0 +1,18 @@
+#version 450
+// sRGB-encoded values back to linear, in place, in a rectangle of an RGB10A2 image. The game's neural upscaler (which
+// FSR / NIS / the linear blit replace, nx2_vkdraw.c) takes the anti-aliased frame in sRGB encoding and writes the 4K
+// frame linear: the UI is drawn over it and the last pass writes it through an sRGB view. Without this the frame was
+// encoded twice (washed-out, low contrast colours).
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(binding = 1, rgb10_a2) uniform image2D img;
+layout(push_constant) uniform Pc { float x, y, w, h; } pc;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= int(pc.w) || p.y >= int(pc.h)) return;
+    p += ivec2(int(pc.x), int(pc.y));
+    vec4 c = imageLoad(img, p);
+    vec3 lo = c.rgb / 12.92, hi = pow((c.rgb + 0.055) / 1.055, vec3(2.4));
+    c.rgb = mix(hi, lo, lessThanEqual(c.rgb, vec3(0.04045)));
+    imageStore(img, p, c);
+}
